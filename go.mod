@@ -29,9 +29,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
