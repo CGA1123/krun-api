@@ -43,11 +43,7 @@ func NewVMNetwork(vmID string, opts Opts) (*VMNetwork, error) {
 		GatewayIP:         "192.168.127.1",
 		GatewayMacAddress: "5a:94:ef:e4:0c:01",
 		DHCPStaticLeases:  map[string]string{"192.168.127.2": opts.GuestMAC},
-		DNS: []types.Zone{{
-			Name:      ".",
-			DefaultIP: net.ParseIP("8.8.8.8"),
-		}},
-		Protocol: types.VfkitProtocol,
+		Protocol:          types.VfkitProtocol,
 	}
 
 	vn, err := virtualnetwork.New(cfg)

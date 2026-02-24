@@ -141,6 +141,7 @@ func run(ctx context.Context, opts runOpts) error {
 	// 7b. Inject init if provided.
 	execPath := imgCfg.ExecPath()
 	execArgs := imgCfg.ExecArgs()
+	env := imgCfg.EnvMap()
 	if opts.initPath != "" {
 		fmt.Println("Injecting init...")
 		if err := cli.InjectInit(opts.rootfsDir, opts.initPath); err != nil {
@@ -149,6 +150,10 @@ func run(ctx context.Context, opts runOpts) error {
 		// vminit runs as PID 1 and spawns the user command as a child.
 		execArgs = append([]string{execPath}, execArgs...)
 		execPath = "/usr/local/bin/vminit"
+		// Tell libkrun's built-in init to exec vminit directly as PID 1
+		// instead of forking it as a child process.
+		env["KRUN_INIT_PID1"] = "1"
+		env["KRUN_HOSTNAME"] = opts.name
 	}
 
 	// 8. Create VM via API.
@@ -162,7 +167,7 @@ func run(ctx context.Context, opts runOpts) error {
 			RootfsPath: opts.rootfsDir,
 			ExecPath:   execPath,
 			Args:       execArgs,
-			Env:        imgCfg.EnvMap(),
+			Env:        env,
 			Workdir:    imgCfg.WorkingDir,
 		},
 	}

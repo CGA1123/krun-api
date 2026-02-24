@@ -25,6 +25,7 @@ type VMConfig struct {
 	MAC                []uint8               `json:"mac"`
 	Volumes            []krun.VirtioFSVolume `json:"volumes,omitempty"`
 	ShutdownSocketPath string                `json:"shutdown_socket_path"`
+	ExecSocketPath     string                `json:"exec_socket_path"`
 }
 
 func main() {
@@ -102,6 +103,13 @@ func main() {
 	if cfg.ShutdownSocketPath != "" {
 		if err := lib.AddVsockPort2(ctxID, 10000, cfg.ShutdownSocketPath, true); err != nil {
 			fmt.Fprintf(os.Stderr, "krun-vmm: add vsock port: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if cfg.ExecSocketPath != "" {
+		if err := lib.AddVsockPort2(ctxID, 10001, cfg.ExecSocketPath, true); err != nil {
+			fmt.Fprintf(os.Stderr, "krun-vmm: add exec vsock port: %v\n", err)
 			os.Exit(1)
 		}
 	}

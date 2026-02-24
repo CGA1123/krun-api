@@ -45,13 +45,14 @@ type NetworkConfig struct {
 type Machine struct {
 	mu sync.RWMutex
 
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Config    Config        `json:"config"`
-	Network   NetworkConfig `json:"network,omitempty"`
-	State     State         `json:"state"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	ID             string        `json:"id"`
+	Name           string        `json:"name"`
+	Config         Config        `json:"config"`
+	Network        NetworkConfig `json:"network,omitempty"`
+	State          State         `json:"state"`
+	ExecSocketPath string        `json:"exec_socket_path,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // SetState transitions the machine to a new state.

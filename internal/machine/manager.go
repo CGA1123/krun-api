@@ -129,6 +129,10 @@ func (mgr *Manager) Start(id string) error {
 	shutdownSocketPath := filepath.Join(mgr.socketDir, id+".shutdown.sock")
 	os.Remove(shutdownSocketPath)
 
+	// Generate exec socket path for vsock exec sessions.
+	execSocketPath := filepath.Join(mgr.socketDir, id+".exec.sock")
+	os.Remove(execSocketPath)
+
 	// Convert machine volumes to krun volumes.
 	var volumes []krun.VirtioFSVolume
 	for _, v := range m.Config.Volumes {
@@ -155,6 +159,7 @@ func (mgr *Manager) Start(id string) error {
 		MAC:                mac,
 		Volumes:            volumes,
 		ShutdownSocketPath: shutdownSocketPath,
+		ExecSocketPath:     execSocketPath,
 	})
 
 	// Start the VM (spawns krun-vmm child process).
@@ -169,6 +174,7 @@ func (mgr *Manager) Start(id string) error {
 	mgr.networks[id] = vmNet
 	mgr.mu.Unlock()
 
+	m.ExecSocketPath = execSocketPath
 	m.SetState(StateRunning)
 
 	// Monitor the child process — clean up on exit.

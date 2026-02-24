@@ -39,6 +39,9 @@ type VMConfig struct {
 
 	// Vsock shutdown agent
 	ShutdownSocketPath string
+
+	// Vsock exec session
+	ExecSocketPath string
 }
 
 // VirtioFSVolume describes a host directory to expose to the guest via virtiofs.
@@ -63,6 +66,7 @@ type vmmConfig struct {
 	MAC                []uint8          `json:"mac"`
 	Volumes            []VirtioFSVolume `json:"volumes,omitempty"`
 	ShutdownSocketPath string           `json:"shutdown_socket_path"`
+	ExecSocketPath     string           `json:"exec_socket_path"`
 }
 
 // VM represents a running VM managed as a child process.
@@ -71,6 +75,7 @@ type VM struct {
 	cmd                *exec.Cmd
 	errC               chan error
 	shutdownSocketPath string
+	execSocketPath     string
 }
 
 // NewVM creates a VM from the given config. No child process is spawned yet.
@@ -78,7 +83,13 @@ func NewVM(cfg VMConfig) *VM {
 	return &VM{
 		cfg:                cfg,
 		shutdownSocketPath: cfg.ShutdownSocketPath,
+		execSocketPath:     cfg.ExecSocketPath,
 	}
+}
+
+// ExecSocketPath returns the host-side Unix socket path for exec vsock connections.
+func (vm *VM) ExecSocketPath() string {
+	return vm.execSocketPath
 }
 
 // Start spawns the krun-vmm child process and monitors it.
@@ -98,6 +109,7 @@ func (vm *VM) Start() error {
 		MAC:                vm.cfg.MAC,
 		Volumes:            vm.cfg.Volumes,
 		ShutdownSocketPath: vm.cfg.ShutdownSocketPath,
+		ExecSocketPath:     vm.cfg.ExecSocketPath,
 	}
 
 	cfgJSON, err := json.Marshal(childCfg)

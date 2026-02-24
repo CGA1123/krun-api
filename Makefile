@@ -3,6 +3,7 @@
 build: init vmm
 	go build -o krun-api ./cmd/krun-api
 	go build -o krun-run ./cmd/krun-run
+	go build -o krun-exec ./cmd/krun-exec
 
 generate:
 	buf generate
@@ -15,4 +16,4 @@ vmm:
 	codesign --sign - --entitlements entitlements.plist --force krun-vmm
 
 clean:
-	rm -f krun-api krun-run krun-vmm vminit
+	rm -f krun-api krun-run krun-vmm krun-exec vminit
