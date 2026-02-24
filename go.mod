@@ -3,11 +3,13 @@ module github.com/CGA1123/krun-api
 go 1.26.0
 
 require (
+	connectrpc.com/connect v1.19.1
 	github.com/containers/gvisor-tap-vsock v0.8.3
 	github.com/ebitengine/purego v0.8.2
 	github.com/google/uuid v1.6.0
 	github.com/inetaf/tcpproxy v0.0.0-20250222171855-c4b9df066048
 	golang.org/x/sys v0.41.0
+	google.golang.org/protobuf v1.36.9
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
 )
 

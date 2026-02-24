@@ -47,6 +47,7 @@ type libkrun struct {
 	SetWorkdir         func(ctxID uint32, path string) int32                                              `C:"krun_set_workdir"`
 	SetConsoleOutput   func(ctxID uint32, path string) int32                                              `C:"krun_set_console_output"`
 	AddNetUnixgram     func(ctxID uint32, path string, fd int, mac []uint8, features, flags uint32) int32 `C:"krun_add_net_unixgram"`
+	AddVirtioFS        func(ctxID uint32, tag string, path string) int32                                   `C:"krun_add_virtiofs"`
 	AddVsockPort2      func(ctxID uint32, port uint32, path string, listen bool) int32                     `C:"krun_add_vsock_port2"`
 	GetShutdownEventFD func(ctxID uint32) int32                                                           `C:"krun_get_shutdown_eventfd"`
 	StartEnter         func(ctxID uint32) int32                                                           `C:"krun_start_enter"`
@@ -172,6 +173,16 @@ func (l *Lib) AddNetUnixgram(ctxID uint32, sockPath string, mac []uint8, feature
 	ret := l.k.AddNetUnixgram(ctxID, sockPath, -1, mac, features, flags)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_net_unixgram: %d", ret)
+	}
+	return nil
+}
+
+// AddVirtioFS adds an independent virtio-fs device pointing to a host directory.
+// The tag identifies the filesystem in the guest (used with: mount -t virtiofs <tag> <mountpoint>).
+func (l *Lib) AddVirtioFS(ctxID uint32, tag, hostPath string) error {
+	ret := l.k.AddVirtioFS(ctxID, tag, hostPath)
+	if ret != 0 {
+		return fmt.Errorf("krun_add_virtiofs: %d", ret)
 	}
 	return nil
 }

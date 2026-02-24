@@ -27,28 +27,20 @@ func ExtractRootfs(ctx context.Context, rt *Runtime, imageTag, destDir string) e
 	return rt.Remove(ctx, cid)
 }
 
-// InjectShutdownAgent copies the pre-built vminit-agent binary and a wrapper
-// script into the rootfs so the guest can be gracefully shut down via vsock.
-// It returns the path (inside the guest) to the wrapper script.
-func InjectShutdownAgent(rootfsDir, agentBinaryPath string) error {
+// InjectInit copies the pre-built vminit binary into the rootfs so it can
+// run as PID 1 and handle graceful shutdown via vsock.
+func InjectInit(rootfsDir, initBinaryPath string) error {
 	binDir := filepath.Join(rootfsDir, "usr", "local", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", binDir, err)
 	}
 
-	// Copy the agent binary.
-	agentData, err := os.ReadFile(agentBinaryPath)
+	data, err := os.ReadFile(initBinaryPath)
 	if err != nil {
-		return fmt.Errorf("read agent binary: %w", err)
+		return fmt.Errorf("read init binary: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "vminit-agent"), agentData, 0o755); err != nil {
-		return fmt.Errorf("write agent binary: %w", err)
-	}
-
-	// Write the wrapper script.
-	wrapper := "#!/bin/sh\n/usr/local/bin/vminit-agent &\nexec \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(binDir, "krun-entrypoint.sh"), []byte(wrapper), 0o755); err != nil {
-		return fmt.Errorf("write wrapper script: %w", err)
+	if err := os.WriteFile(filepath.Join(binDir, "vminit"), data, 0o755); err != nil {
+		return fmt.Errorf("write init binary: %w", err)
 	}
 
 	return nil

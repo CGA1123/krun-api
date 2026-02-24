@@ -21,9 +21,10 @@ type VMConfig struct {
 	Env                []string `json:"env"`
 	Workdir            string  `json:"workdir"`
 	ConsolePath        string  `json:"console_path"`
-	NetSocketPath      string  `json:"net_socket_path"`
-	MAC                []uint8  `json:"mac"`
-	ShutdownSocketPath string  `json:"shutdown_socket_path"`
+	NetSocketPath      string                `json:"net_socket_path"`
+	MAC                []uint8               `json:"mac"`
+	Volumes            []krun.VirtioFSVolume `json:"volumes,omitempty"`
+	ShutdownSocketPath string                `json:"shutdown_socket_path"`
 }
 
 func main() {
@@ -87,6 +88,13 @@ func main() {
 	if cfg.NetSocketPath != "" {
 		if err := lib.AddNetUnixgram(ctxID, cfg.NetSocketPath, cfg.MAC, krun.CompatNetFeatures, krun.NetFlagVfkit); err != nil {
 			fmt.Fprintf(os.Stderr, "krun-vmm: add net unixgram: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	for _, vol := range cfg.Volumes {
+		if err := lib.AddVirtioFS(ctxID, vol.Tag, vol.HostPath); err != nil {
+			fmt.Fprintf(os.Stderr, "krun-vmm: add virtiofs %q -> %q: %v\n", vol.Tag, vol.HostPath, err)
 			os.Exit(1)
 		}
 	}

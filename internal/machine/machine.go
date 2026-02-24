@@ -17,6 +17,12 @@ const (
 	StateStopped  State = "stopped"
 )
 
+// Volume maps a host directory into the guest via virtiofs.
+type Volume struct {
+	Tag      string `json:"tag"`
+	HostPath string `json:"host_path"`
+}
+
 // Config holds the user-supplied configuration for creating a machine.
 type Config struct {
 	VCPUs      int               `json:"vcpus"`
@@ -26,6 +32,7 @@ type Config struct {
 	Args       []string          `json:"args,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
 	Workdir    string            `json:"workdir,omitempty"`
+	Volumes    []Volume          `json:"volumes,omitempty"`
 }
 
 // NetworkConfig holds optional network routing configuration.

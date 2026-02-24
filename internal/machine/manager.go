@@ -129,6 +129,15 @@ func (mgr *Manager) Start(id string) error {
 	shutdownSocketPath := filepath.Join(mgr.socketDir, id+".shutdown.sock")
 	os.Remove(shutdownSocketPath)
 
+	// Convert machine volumes to krun volumes.
+	var volumes []krun.VirtioFSVolume
+	for _, v := range m.Config.Volumes {
+		volumes = append(volumes, krun.VirtioFSVolume{
+			Tag:      v.Tag,
+			HostPath: v.HostPath,
+		})
+	}
+
 	// Configure the krun VM (spawned as a child process).
 	vm := krun.NewVM(krun.VMConfig{
 		LibkrunPath:        mgr.libkrunPath,
@@ -144,6 +153,7 @@ func (mgr *Manager) Start(id string) error {
 		ConsolePath:        consolePath,
 		NetSocketPath:      vmNet.SocketPath(),
 		MAC:                mac,
+		Volumes:            volumes,
 		ShutdownSocketPath: shutdownSocketPath,
 	})
 

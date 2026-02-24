@@ -30,7 +30,7 @@ func main() {
 		proxy      string
 		allow      allowListFlag
 		noStart    bool
-		agentPath  string
+		initPath   string
 	)
 
 	flag.StringVar(&dockerfile, "f", "", "Dockerfile path (default: <context>/Dockerfile)")
@@ -44,7 +44,7 @@ func main() {
 	flag.StringVar(&proxy, "proxy", "", "Route all VM traffic through this proxy")
 	flag.Var(&allow, "allow", "Allow-list rules (repeatable)")
 	flag.BoolVar(&noStart, "no-start", false, "Create the VM but don't start it")
-	flag.StringVar(&agentPath, "agent", "", "Path to vminit-agent binary for graceful shutdown")
+	flag.StringVar(&initPath, "init", "", "Path to vminit binary for graceful shutdown")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: krun-run [flags] <build-context-path>\n\nFlags:\n")
@@ -85,7 +85,7 @@ func main() {
 		proxy:      proxy,
 		allow:      allow,
 		noStart:    noStart,
-		agentPath:  agentPath,
+		initPath:   initPath,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -104,7 +104,7 @@ type runOpts struct {
 	proxy      string
 	allow      []string
 	noStart    bool
-	agentPath  string
+	initPath   string
 }
 
 func run(ctx context.Context, opts runOpts) error {
@@ -138,17 +138,17 @@ func run(ctx context.Context, opts runOpts) error {
 		return fmt.Errorf("fix resolv.conf: %w", err)
 	}
 
-	// 7b. Inject shutdown agent if provided.
+	// 7b. Inject init if provided.
 	execPath := imgCfg.ExecPath()
 	execArgs := imgCfg.ExecArgs()
-	if opts.agentPath != "" {
-		fmt.Println("Injecting shutdown agent...")
-		if err := cli.InjectShutdownAgent(opts.rootfsDir, opts.agentPath); err != nil {
-			return fmt.Errorf("inject shutdown agent: %w", err)
+	if opts.initPath != "" {
+		fmt.Println("Injecting init...")
+		if err := cli.InjectInit(opts.rootfsDir, opts.initPath); err != nil {
+			return fmt.Errorf("inject init: %w", err)
 		}
-		// Wrap the original command with the entrypoint script.
+		// vminit runs as PID 1 and spawns the user command as a child.
 		execArgs = append([]string{execPath}, execArgs...)
-		execPath = "/usr/local/bin/krun-entrypoint.sh"
+		execPath = "/usr/local/bin/vminit"
 	}
 
 	// 8. Create VM via API.

@@ -21,7 +21,7 @@ make
 ```
 
 This builds `krun-api`, `krun-vmm` (codesigned for Hypervisor.framework),
-`krun-run`, and `vminit-agent` (cross-compiled for `linux/arm64`).
+`krun-run`, and `vminit` (cross-compiled for `linux/arm64`).
 
 ## Quick start
 
@@ -42,7 +42,7 @@ Launch a VM from a Dockerfile (in another terminal):
 ```bash
 ./krun-run \
   --api http://localhost:8080 \
-  --agent ./vminit-agent \
+  --init ./vminit \
   -n my-vm \
   path/to/build-context/
 ```
@@ -77,7 +77,7 @@ Shutdown flow:
   manager.Stop()
     → closes virtual network
     → connects to vsock shutdown socket
-    → vminit-agent: sync() + reboot(POWER_OFF)
+    → vminit (PID 1): sends SIGTERM to child, sync() + reboot(POWER_OFF)
     → libkrun _exit() kills only the child process
     → parent detects child exit, cleans up
 ```

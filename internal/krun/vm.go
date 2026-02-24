@@ -1,12 +1,18 @@
 package krun
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"time"
+
+	"connectrpc.com/connect"
+	vminitv1 "github.com/CGA1123/krun-api/gen/vminit/v1"
+	"github.com/CGA1123/krun-api/gen/vminit/v1/vminitv1connect"
 )
 
 // VMConfig holds the configuration for a new VM.
@@ -28,8 +34,17 @@ type VMConfig struct {
 	NetSocketPath string
 	MAC           []uint8
 
+	// Virtiofs volumes
+	Volumes []VirtioFSVolume
+
 	// Vsock shutdown agent
 	ShutdownSocketPath string
+}
+
+// VirtioFSVolume describes a host directory to expose to the guest via virtiofs.
+type VirtioFSVolume struct {
+	Tag      string `json:"tag"`
+	HostPath string `json:"host_path"`
 }
 
 // vmmConfig is the JSON sent to the krun-vmm child process via stdin.
@@ -44,9 +59,10 @@ type vmmConfig struct {
 	Env                []string `json:"env"`
 	Workdir            string   `json:"workdir"`
 	ConsolePath        string   `json:"console_path"`
-	NetSocketPath      string   `json:"net_socket_path"`
-	MAC                []uint8  `json:"mac"`
-	ShutdownSocketPath string   `json:"shutdown_socket_path"`
+	NetSocketPath      string           `json:"net_socket_path"`
+	MAC                []uint8          `json:"mac"`
+	Volumes            []VirtioFSVolume `json:"volumes,omitempty"`
+	ShutdownSocketPath string           `json:"shutdown_socket_path"`
 }
 
 // VM represents a running VM managed as a child process.
@@ -80,6 +96,7 @@ func (vm *VM) Start() error {
 		ConsolePath:        vm.cfg.ConsolePath,
 		NetSocketPath:      vm.cfg.NetSocketPath,
 		MAC:                vm.cfg.MAC,
+		Volumes:            vm.cfg.Volumes,
 		ShutdownSocketPath: vm.cfg.ShutdownSocketPath,
 	}
 
@@ -119,32 +136,34 @@ func (vm *VM) Start() error {
 	return nil
 }
 
-// Stop attempts a graceful shutdown via the vsock shutdown agent.
-// The agent calls sync() + reboot(POWER_OFF), which causes libkrun's
-// _exit() to terminate the child process.
+// Stop attempts a graceful shutdown via the vminit Connect RPC service.
+// The Shutdown RPC calls sync() inside the guest, then vminit proceeds
+// with reboot(POWER_OFF), which causes libkrun's _exit() to terminate
+// the child process.
 func (vm *VM) Stop() error {
 	fmt.Fprintf(os.Stderr, "[vm.Stop] starting shutdown\n")
 
 	if vm.shutdownSocketPath != "" {
-		fmt.Fprintf(os.Stderr, "[vm.Stop] connecting to vsock socket %s\n", vm.shutdownSocketPath)
-		conn, err := net.DialTimeout("unix", vm.shutdownSocketPath, 2*time.Second)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[vm.Stop] vsock connect failed: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "[vm.Stop] vsock connected, waiting for agent to sync\n")
-			conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-			var buf [16]byte
-			n, err := conn.Read(buf[:])
-			conn.Close()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[vm.Stop] vsock read failed: %v\n", err)
-			} else {
-				fmt.Fprintf(os.Stderr, "[vm.Stop] agent responded: %s\n", string(buf[:n]))
-			}
+		fmt.Fprintf(os.Stderr, "[vm.Stop] calling Shutdown RPC via %s\n", vm.shutdownSocketPath)
 
-			// Agent will call reboot(POWER_OFF) → child exits via _exit.
-			// Wait for the child process to actually exit.
-			fmt.Fprintf(os.Stderr, "[vm.Stop] waiting for child process to exit\n")
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return net.DialTimeout("unix", vm.shutdownSocketPath, 2*time.Second)
+				},
+			},
+		}
+
+		client := vminitv1connect.NewVMInitServiceClient(httpClient, "http://localhost")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, err := client.Shutdown(ctx, connect.NewRequest(&vminitv1.ShutdownRequest{}))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[vm.Stop] Shutdown RPC failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[vm.Stop] Shutdown RPC succeeded, waiting for child process to exit\n")
 			if _, exited := vm.WaitTimeout(10 * time.Second); exited {
 				fmt.Fprintf(os.Stderr, "[vm.Stop] child process exited cleanly\n")
 				return nil

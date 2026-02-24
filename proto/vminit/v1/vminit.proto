@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package vminit.v1;
+
+service VMInitService {
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {}

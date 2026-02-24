@@ -5,12 +5,12 @@ cd "$(dirname "$0")"
 
 API_URL="${API_URL:-http://localhost:9090}"
 
-# Build krun-run, krun-vmm, and vminit-agent
-echo "==> Building krun-run, krun-vmm, and vminit-agent..."
+# Build krun-run, krun-vmm, and vminit
+echo "==> Building krun-run, krun-vmm, and vminit..."
 go build -o krun-run ./cmd/krun-run/
 go build -o krun-vmm ./cmd/krun-vmm/
 codesign --sign - --entitlements entitlements.plist --force krun-vmm
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o vminit-agent ./cmd/vminit-agent/
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o vminit ./cmd/vminit/
 
 # Create test Dockerfile
 TEST_DIR=$(mktemp -d)
@@ -42,8 +42,8 @@ fi
 echo "==> krun-api is running at $API_URL"
 
 # Run krun-run
-echo "==> Running: ./krun-run --api $API_URL --agent ./vminit-agent -n test-alpine $TEST_DIR"
-./krun-run --api "$API_URL" --agent ./vminit-agent -n test-alpine "$TEST_DIR"
+echo "==> Running: ./krun-run --api $API_URL --init ./vminit -n test-alpine $TEST_DIR"
+./krun-run --api "$API_URL" --init ./vminit -n test-alpine "$TEST_DIR"
 
 # Verify
 echo ""
