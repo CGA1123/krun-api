@@ -22,6 +22,7 @@ type Manager struct {
 	networks     map[string]*network.VMNetwork
 	vmmBinPath   string
 	socketDir    string
+	rootfsDir    string
 	krunLogLevel uint32
 }
 
@@ -31,29 +32,48 @@ func NewManager(vmmBinPath, socketDir string, krunLogLevel uint32) (*Manager, er
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
 
+	rootfsDir := filepath.Join(socketDir, "rootfs")
+	if err := os.MkdirAll(rootfsDir, 0700); err != nil {
+		return nil, fmt.Errorf("create rootfs dir: %w", err)
+	}
+
 	return &Manager{
 		machines:     make(map[string]*Machine),
 		vms:          make(map[string]*krun.VM),
 		networks:     make(map[string]*network.VMNetwork),
 		vmmBinPath:   vmmBinPath,
 		socketDir:    socketDir,
+		rootfsDir:    rootfsDir,
 		krunLogLevel: krunLogLevel,
 	}, nil
 }
 
 // Create registers a new machine in the "created" state.
-func (mgr *Manager) Create(name string, cfg Config, netCfg NetworkConfig) (*Machine, error) {
+// If baseImagePath is non-empty, an APFS copy-on-write clone of that directory
+// is created and used as cfg.RootfsPath.
+func (mgr *Manager) Create(name, baseImagePath string, cfg Config, netCfg NetworkConfig) (*Machine, error) {
 	id := uuid.New().String()
 	now := time.Now()
 
+	rootfsIsClone := false
+	if baseImagePath != "" {
+		clonePath := filepath.Join(mgr.rootfsDir, id)
+		if err := cloneDir(baseImagePath, clonePath); err != nil {
+			return nil, fmt.Errorf("clone base image: %w", err)
+		}
+		cfg.RootfsPath = clonePath
+		rootfsIsClone = true
+	}
+
 	m := &Machine{
-		ID:        id,
-		Name:      name,
-		Config:    cfg,
-		Network:   netCfg,
-		State:     StateCreated,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:            id,
+		Name:          name,
+		Config:        cfg,
+		Network:       netCfg,
+		State:         StateCreated,
+		RootfsIsClone: rootfsIsClone,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	mgr.mu.Lock()
@@ -115,7 +135,6 @@ func (mgr *Manager) Start(id string) error {
 		GuestMAC:  macStr,
 		SocketDir: mgr.socketDir,
 		ProxyAddr: m.Network.ProxyAddr,
-		AllowList: m.Network.AllowList,
 	})
 	if err != nil {
 		m.SetState(StateStopped)
@@ -266,21 +285,32 @@ func (mgr *Manager) Stop(id string) error {
 }
 
 // Delete removes a stopped machine from the manager.
-func (mgr *Manager) Delete(id string) error {
+// If deleteRootfs is true and the machine's rootfs is a clone, the clone
+// directory is also removed.
+func (mgr *Manager) Delete(id string, deleteRootfs bool) error {
 	mgr.mu.Lock()
-	defer mgr.mu.Unlock()
 
 	m, ok := mgr.machines[id]
 	if !ok {
+		mgr.mu.Unlock()
 		return fmt.Errorf("machine %s not found", id)
 	}
 
 	state := m.GetState()
 	if state != StateStopped && state != StateCreated {
+		mgr.mu.Unlock()
 		return fmt.Errorf("machine %s is in state %s, must be stopped before delete", id, state)
 	}
 
 	delete(mgr.machines, id)
+	mgr.mu.Unlock()
+
+	if deleteRootfs && m.RootfsIsClone {
+		if err := os.RemoveAll(m.Config.RootfsPath); err != nil {
+			slog.Warn("failed to remove cloned rootfs", "path", m.Config.RootfsPath, "error", err)
+		}
+	}
+
 	return nil
 }
 

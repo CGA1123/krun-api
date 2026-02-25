@@ -4,22 +4,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 API_URL="${API_URL:-http://localhost:9191}"
+BASE_IMAGE="${BASE_IMAGE:-alpine:latest}"
 
 # Build everything
 echo "==> Building..."
 make build
-
-# Create test Dockerfile
-TEST_DIR=$(mktemp -d)
-trap 'rm -rf "$TEST_DIR"' EXIT
-
-cat > "$TEST_DIR/Dockerfile" <<'EOF'
-FROM alpine:latest
-RUN apk add --no-cache curl shadow
-CMD ["/bin/sh", "-l"]
-EOF
-
-echo "==> Test Dockerfile created at $TEST_DIR/Dockerfile"
 
 # Check if krun-api is running
 if ! curl -sf "$API_URL/v1/machines" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
@@ -27,7 +16,7 @@ if ! curl -sf "$API_URL/v1/machines" | python3 -c "import sys,json; json.load(sy
   echo "ERROR: krun-api server is not responding at $API_URL"
   echo ""
   echo "Start it in another terminal first:"
-  echo "  cd $(pwd) && make build && ./krun-api --vmm-path ./krun-vmm --listen :9090"
+  echo "  cd $(pwd) && make build && ./krun-api --vmm-path ./krun-vmm --vminit-path ./vminit --listen :9191"
   echo ""
   echo "Or set API_URL to point to your running instance:"
   echo "  API_URL=http://localhost:XXXX ./test-krun-exec.sh"
@@ -35,10 +24,11 @@ if ! curl -sf "$API_URL/v1/machines" | python3 -c "import sys,json; json.load(sy
 fi
 
 echo "==> krun-api is running at $API_URL"
+echo "==> Using base image: $BASE_IMAGE"
 
-# Create and start a VM
-echo "==> Creating VM..."
-./krun-run --api "$API_URL" --init ./vminit -n test-exec "$TEST_DIR"
+# Create and start a VM via --image (pulls config via crane, server handles rootfs caching)
+echo "==> Creating VM from $BASE_IMAGE..."
+./krun-run --api "$API_URL" --image "$BASE_IMAGE" --init ./vminit -n test-exec --cpus 2
 
 # Find the machine ID
 MACHINE_ID=$(curl -s "$API_URL/v1/machines" | python3 -c "
@@ -50,12 +40,6 @@ for m in machines:
         break
 ")
 
-if [ -z "$MACHINE_ID" ]; then
-  echo "ERROR: could not find running test-exec machine"
-  exit 1
-fi
-
-echo "==> Machine ID: $MACHINE_ID"
 echo "==> Waiting 2s for VM to boot..."
 sleep 2
 
@@ -72,5 +56,6 @@ echo ""
 echo ""
 echo "==> Session ended."
 echo ""
-echo "==> To stop the VM:"
+echo "==> To stop the VM and clean up the cloned rootfs:"
 echo "    curl -X POST $API_URL/v1/machines/$MACHINE_ID/stop"
+echo "    curl -X DELETE '$API_URL/v1/machines/$MACHINE_ID?delete_rootfs=true'"

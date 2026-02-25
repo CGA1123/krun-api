@@ -1,31 +1,10 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 )
-
-// ExtractRootfs creates a temporary container, exports its filesystem to
-// destDir, then removes the container.
-func ExtractRootfs(ctx context.Context, rt *Runtime, imageTag, destDir string) error {
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", destDir, err)
-	}
-
-	cid, err := rt.Create(ctx, imageTag)
-	if err != nil {
-		return err
-	}
-
-	if err := rt.Export(ctx, cid, destDir); err != nil {
-		_ = rt.Remove(ctx, cid)
-		return err
-	}
-
-	return rt.Remove(ctx, cid)
-}
 
 // InjectInit copies the pre-built vminit binary into the rootfs so it can
 // run as PID 1 and handle graceful shutdown via vsock.

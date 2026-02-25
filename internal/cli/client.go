@@ -24,26 +24,25 @@ func NewClient(baseURL string) *Client {
 
 // CreateMachineRequest mirrors the API request body.
 type CreateMachineRequest struct {
-	Name    string            `json:"name"`
-	Config  MachineConfig     `json:"config"`
-	Network NetworkConfig     `json:"network,omitempty"`
+	Name      string        `json:"name"`
+	BaseImage string        `json:"base_image,omitempty"`
+	Config    MachineConfig `json:"config"`
+	Network   NetworkConfig `json:"network,omitempty"`
 }
 
 // MachineConfig is the VM configuration sent to the API.
 type MachineConfig struct {
-	VCPUs      int               `json:"vcpus"`
-	MemoryMiB  int               `json:"memory_mib"`
-	RootfsPath string            `json:"rootfs_path"`
-	ExecPath   string            `json:"exec_path"`
-	Args       []string          `json:"args,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	Workdir    string            `json:"workdir,omitempty"`
+	VCPUs     int               `json:"vcpus"`
+	MemoryMiB int               `json:"memory_mib"`
+	ExecPath  string            `json:"exec_path"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	Workdir   string            `json:"workdir,omitempty"`
 }
 
 // NetworkConfig is the optional network configuration.
 type NetworkConfig struct {
-	ProxyAddr string   `json:"proxy_addr,omitempty"`
-	AllowList []string `json:"allow_list,omitempty"`
+	ProxyAddr string `json:"proxy_addr,omitempty"`
 }
 
 // MachineResponse is the JSON returned by the API for a machine.

@@ -5,178 +5,112 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/google/go-containerregistry/pkg/crane"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/CGA1123/krun-api/internal/cli"
 )
 
-type allowListFlag []string
-
-func (f *allowListFlag) String() string { return strings.Join(*f, ",") }
-func (f *allowListFlag) Set(v string) error {
-	*f = append(*f, v)
-	return nil
-}
-
 func main() {
 	var (
-		dockerfile string
-		name       string
-		apiURL     string
-		cpus       int
-		memory     int
-		rootfsDir  string
-		proxy      string
-		allow      allowListFlag
-		noStart    bool
-		initPath   string
+		image    string
+		name     string
+		apiURL   string
+		cpus     int
+		memory   int
+		proxy    string
+		noStart  bool
+		initPath string
 	)
 
-	flag.StringVar(&dockerfile, "f", "", "Dockerfile path (default: <context>/Dockerfile)")
-	flag.StringVar(&dockerfile, "file", "", "Dockerfile path (default: <context>/Dockerfile)")
-	flag.StringVar(&name, "n", "", "VM name (default: directory name of build context)")
-	flag.StringVar(&name, "name", "", "VM name (default: directory name of build context)")
+	flag.StringVar(&image, "image", "", "Container image ref (e.g. alpine:3.18)")
+	flag.StringVar(&name, "n", "", "VM name (default: image basename)")
+	flag.StringVar(&name, "name", "", "VM name (default: image basename)")
 	flag.StringVar(&apiURL, "api", "http://localhost:8080", "krun-api server URL")
 	flag.IntVar(&cpus, "cpus", 2, "Number of vCPUs")
 	flag.IntVar(&memory, "memory", 512, "RAM in MiB")
-	flag.StringVar(&rootfsDir, "rootfs-dir", "", "Where to extract rootfs")
-	flag.StringVar(&proxy, "proxy", "", "Route all VM traffic through this proxy")
-	flag.Var(&allow, "allow", "Allow-list rules (repeatable)")
+	flag.StringVar(&proxy, "proxy", "", "Route all VM traffic through this SOCKS5 proxy")
 	flag.BoolVar(&noStart, "no-start", false, "Create the VM but don't start it")
 	flag.StringVar(&initPath, "init", "", "Path to vminit binary for graceful shutdown")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: krun-run [flags] <build-context-path>\n\nFlags:\n")
+		fmt.Fprintf(os.Stderr, "Usage: krun-run --image <image-ref> [flags]\n\nFlags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	if flag.NArg() != 1 {
+	if image == "" {
+		flag.Usage()
+		os.Exit(1)
+	}
+	if flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	contextDir := flag.Arg(0)
-
-	// Resolve defaults.
 	if name == "" {
-		name = filepath.Base(contextDir)
-	}
-	if dockerfile == "" {
-		dockerfile = filepath.Join(contextDir, "Dockerfile")
-	}
-	if rootfsDir == "" {
-		rootfsDir = filepath.Join("/tmp/krun-api", "rootfs-"+name)
+		name = imageBasename(image)
 	}
 
-	imageTag := "krun-" + name
 	ctx := context.Background()
-
-	if err := run(ctx, runOpts{
-		contextDir: contextDir,
-		dockerfile: dockerfile,
-		name:       name,
-		imageTag:   imageTag,
-		apiURL:     apiURL,
-		cpus:       cpus,
-		memory:     memory,
-		rootfsDir:  rootfsDir,
-		proxy:      proxy,
-		allow:      allow,
-		noStart:    noStart,
-		initPath:   initPath,
-	}); err != nil {
+	if err := run(ctx, image, name, apiURL, cpus, memory, proxy, initPath, noStart); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-type runOpts struct {
-	contextDir string
-	dockerfile string
-	name       string
-	imageTag   string
-	apiURL     string
-	cpus       int
-	memory     int
-	rootfsDir  string
-	proxy      string
-	allow      []string
-	noStart    bool
-	initPath   string
-}
+func run(ctx context.Context, image, name, apiURL string, cpus, memory int, proxy, initPath string, noStart bool) error {
+	platform := &v1.Platform{OS: "linux", Architecture: runtime.GOARCH}
+	fmt.Printf("Inspecting image %s (%s/%s)...\n", image, platform.OS, platform.Architecture)
 
-func run(ctx context.Context, opts runOpts) error {
-	// 1. Detect container runtime.
-	rt, err := cli.DetectRuntime()
+	img, err := crane.Pull(image, crane.WithContext(ctx), crane.WithPlatform(platform))
 	if err != nil {
-		return err
-	}
-	fmt.Printf("Using runtime: %s\n", rt.Name())
-
-	// 2. Build image.
-	fmt.Printf("Building image %s...\n", opts.imageTag)
-	if err := rt.Build(ctx, opts.contextDir, opts.dockerfile, opts.imageTag); err != nil {
-		return fmt.Errorf("build failed: %w", err)
+		return fmt.Errorf("pull image config: %w", err)
 	}
 
-	// 3. Inspect image.
-	imgCfg, err := rt.InspectImage(ctx, opts.imageTag)
+	cfgFile, err := img.ConfigFile()
 	if err != nil {
-		return err
+		return fmt.Errorf("read image config: %w", err)
 	}
 
-	// 4-6. Extract rootfs.
-	fmt.Printf("Extracting rootfs to %s...\n", opts.rootfsDir)
-	if err := cli.ExtractRootfs(ctx, rt, opts.imageTag, opts.rootfsDir); err != nil {
-		return fmt.Errorf("extract rootfs: %w", err)
+	imgCfg := &cli.ImageConfig{
+		Cmd:        cfgFile.Config.Cmd,
+		Entrypoint: cfgFile.Config.Entrypoint,
+		Env:        cfgFile.Config.Env,
+		WorkingDir: cfgFile.Config.WorkingDir,
 	}
 
-	// 7. Fix resolv.conf.
-	if err := cli.FixResolvConf(opts.rootfsDir); err != nil {
-		return fmt.Errorf("fix resolv.conf: %w", err)
-	}
-
-	// 7b. Inject init if provided.
 	execPath := imgCfg.ExecPath()
 	execArgs := imgCfg.ExecArgs()
 	env := imgCfg.EnvMap()
-	if opts.initPath != "" {
-		fmt.Println("Injecting init...")
-		if err := cli.InjectInit(opts.rootfsDir, opts.initPath); err != nil {
-			return fmt.Errorf("inject init: %w", err)
-		}
-		// vminit runs as PID 1 and spawns the user command as a child.
+
+	if initPath != "" {
 		execArgs = append([]string{execPath}, execArgs...)
 		execPath = "/usr/local/bin/vminit"
-		// Tell libkrun's built-in init to exec vminit directly as PID 1
-		// instead of forking it as a child process.
 		env["KRUN_INIT_PID1"] = "1"
-		env["KRUN_HOSTNAME"] = opts.name
+		env["KRUN_HOSTNAME"] = name
 	}
 
-	// 8. Create VM via API.
-	client := cli.NewClient(opts.apiURL)
+	client := cli.NewClient(apiURL)
 
 	req := cli.CreateMachineRequest{
-		Name: opts.name,
+		Name:      name,
+		BaseImage: image,
 		Config: cli.MachineConfig{
-			VCPUs:      opts.cpus,
-			MemoryMiB:  opts.memory,
-			RootfsPath: opts.rootfsDir,
-			ExecPath:   execPath,
-			Args:       execArgs,
-			Env:        env,
-			Workdir:    imgCfg.WorkingDir,
+			VCPUs:     cpus,
+			MemoryMiB: memory,
+			ExecPath:  execPath,
+			Args:      execArgs,
+			Env:       env,
+			Workdir:   imgCfg.WorkingDir,
 		},
 	}
 
-	if opts.proxy != "" || len(opts.allow) > 0 {
-		req.Network = cli.NetworkConfig{
-			ProxyAddr: opts.proxy,
-			AllowList: opts.allow,
-		}
+	if proxy != "" {
+		req.Network = cli.NetworkConfig{ProxyAddr: proxy}
 	}
 
 	machine, err := client.CreateMachine(req)
@@ -185,8 +119,7 @@ func run(ctx context.Context, opts runOpts) error {
 	}
 	fmt.Printf("Created machine: id=%s name=%s state=%s\n", machine.ID, machine.Name, machine.State)
 
-	// 9. Start unless --no-start.
-	if !opts.noStart {
+	if !noStart {
 		machine, err = client.StartMachine(machine.ID)
 		if err != nil {
 			return fmt.Errorf("start machine: %w", err)
@@ -195,4 +128,15 @@ func run(ctx context.Context, opts runOpts) error {
 	}
 
 	return nil
+}
+
+// imageBasename returns the repository name from an image ref.
+// "alpine:3.18" → "alpine", "docker.io/library/alpine:latest" → "alpine"
+func imageBasename(ref string) string {
+	ref, _, _ = strings.Cut(ref, "@")
+	ref, _, _ = strings.Cut(ref, ":")
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	return ref
 }

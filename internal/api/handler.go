@@ -11,12 +11,13 @@ import (
 
 // Handler holds the dependencies for HTTP handlers.
 type Handler struct {
-	mgr *machine.Manager
+	mgr        *machine.Manager
+	imageCache *ImageCache // nil if image support not configured
 }
 
 // NewHandler creates a new API handler.
-func NewHandler(mgr *machine.Manager) *Handler {
-	return &Handler{mgr: mgr}
+func NewHandler(mgr *machine.Manager, imageCache *ImageCache) *Handler {
+	return &Handler{mgr: mgr, imageCache: imageCache}
 }
 
 // CreateMachine handles POST /v1/machines.
@@ -27,6 +28,15 @@ func (h *Handler) CreateMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.BaseImage == "" {
+		writeError(w, http.StatusBadRequest, "base_image is required")
+		return
+	}
+	if req.Config.RootfsPath != "" {
+		writeError(w, http.StatusBadRequest, "rootfs_path is not supported; use base_image")
+		return
+	}
+
 	if req.Config.VCPUs == 0 {
 		req.Config.VCPUs = 1
 	}
@@ -34,7 +44,18 @@ func (h *Handler) CreateMachine(w http.ResponseWriter, r *http.Request) {
 		req.Config.MemoryMiB = 256
 	}
 
-	m, err := h.mgr.Create(req.Name, req.Config, req.Network)
+	if h.imageCache == nil {
+		writeError(w, http.StatusInternalServerError, "image support not configured (missing --vminit-path)")
+		return
+	}
+
+	baseImagePath, err := h.imageCache.Ensure(r.Context(), req.BaseImage)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "extract image: "+err.Error())
+		return
+	}
+
+	m, err := h.mgr.Create(req.Name, baseImagePath, req.Config, req.Network)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -60,9 +81,11 @@ func (h *Handler) GetMachine(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteMachine handles DELETE /v1/machines/{id}.
+// Pass ?delete_rootfs=true to also remove a cloned rootfs directory.
 func (h *Handler) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.mgr.Delete(id); err != nil {
+	deleteRootfs := r.URL.Query().Get("delete_rootfs") == "true"
+	if err := h.mgr.Delete(id, deleteRootfs); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

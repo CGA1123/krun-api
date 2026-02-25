@@ -51,10 +51,11 @@ func main() {
 	ensureBrewLibPath()
 
 	var (
-		listen    = flag.String("listen", ":8080", "HTTP listen address")
-		vmmPath   = flag.String("vmm-path", "./krun-vmm", "path to krun-vmm binary")
-		socketDir = flag.String("socket-dir", "/tmp/krun-api", "directory for VM sockets and console logs")
-		logLevel  = flag.String("log-level", "info", "log level (debug, info, warn, error)")
+		listen     = flag.String("listen", ":8080", "HTTP listen address")
+		vmmPath    = flag.String("vmm-path", "./krun-vmm", "path to krun-vmm binary")
+		socketDir  = flag.String("socket-dir", "/tmp/krun-api", "directory for VM sockets and console logs")
+		logLevel   = flag.String("log-level", "info", "log level (debug, info, warn, error)")
+		vminitPath = flag.String("vminit-path", "", "path to vminit binary (enables base_image support)")
 	)
 	flag.Parse()
 
@@ -85,8 +86,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Optionally create image cache when --vminit-path is set.
+	var imageCache *api.ImageCache
+	if *vminitPath != "" {
+		cacheDir := filepath.Join(*socketDir, "images")
+		var err error
+		imageCache, err = api.NewImageCache(cacheDir, *vminitPath)
+		if err != nil {
+			slog.Error("failed to create image cache", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	// Wire API routes.
-	handler := api.NewHandler(mgr)
+	handler := api.NewHandler(mgr, imageCache)
 	router := api.NewRouter(handler)
 
 	srv := &http.Server{

@@ -37,8 +37,7 @@ type Config struct {
 
 // NetworkConfig holds optional network routing configuration.
 type NetworkConfig struct {
-	ProxyAddr string   `json:"proxy_addr,omitempty"`
-	AllowList []string `json:"allow_list,omitempty"`
+	ProxyAddr string `json:"proxy_addr,omitempty"`
 }
 
 // Machine represents a single microVM and its metadata.
@@ -51,6 +50,7 @@ type Machine struct {
 	Network        NetworkConfig `json:"network,omitempty"`
 	State          State         `json:"state"`
 	ExecSocketPath string        `json:"exec_socket_path,omitempty"`
+	RootfsIsClone  bool          `json:"rootfs_is_clone"`
 	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at"`
 }

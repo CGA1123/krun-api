@@ -7,16 +7,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
+	"golang.org/x/net/proxy"
 )
-
-
 
 // VMNetwork manages the userspace virtual network for a single VM.
 type VMNetwork struct {
@@ -113,34 +110,17 @@ func (n *VMNetwork) Close() error {
 }
 
 func buildDialer(opts Opts) func(network, addr string) (net.Conn, error) {
-	if opts.ProxyAddr != "" && len(opts.AllowList) > 0 {
-		rules := parseAllowList(opts.AllowList)
-		return func(network, addr string) (net.Conn, error) {
-			if !matchesAllowList(addr, rules) {
-				slog.Info("guest connection blocked", "network", network, "addr", addr)
-				return nil, fmt.Errorf("blocked by allow list: %s", addr)
-			}
-			slog.Info("guest connection", "network", network, "addr", addr)
-			return net.Dial(network, opts.ProxyAddr)
-		}
-	}
-
 	if opts.ProxyAddr != "" {
-		return func(network, addr string) (net.Conn, error) {
-			slog.Info("guest connection", "network", network, "addr", addr)
-			return net.Dial(network, opts.ProxyAddr)
-		}
-	}
-
-	if len(opts.AllowList) > 0 {
-		rules := parseAllowList(opts.AllowList)
-		return func(network, addr string) (net.Conn, error) {
-			if !matchesAllowList(addr, rules) {
-				slog.Info("guest connection blocked", "network", network, "addr", addr)
-				return nil, fmt.Errorf("blocked by allow list: %s", addr)
+		socksDialer, err := proxy.SOCKS5("tcp", opts.ProxyAddr, nil, proxy.Direct)
+		if err != nil {
+			slog.Error("failed to create SOCKS5 dialer", "proxy", opts.ProxyAddr, "error", err)
+			return func(network, addr string) (net.Conn, error) {
+				return nil, fmt.Errorf("SOCKS5 dialer init failed: %w", err)
 			}
-			slog.Info("guest connection", "network", network, "addr", addr)
-			return net.Dial(network, addr)
+		}
+		return func(network, addr string) (net.Conn, error) {
+			slog.Info("guest connection via SOCKS5", "network", network, "addr", addr, "proxy", opts.ProxyAddr)
+			return socksDialer.Dial(network, addr)
 		}
 	}
 
@@ -149,62 +129,3 @@ func buildDialer(opts Opts) func(network, addr string) (net.Conn, error) {
 		return net.Dial(network, addr)
 	}
 }
-
-type allowRule struct {
-	network *net.IPNet
-	port    int // 0 means all ports
-}
-
-func parseAllowList(rules []string) []allowRule {
-	var parsed []allowRule
-	for _, r := range rules {
-		rule := allowRule{}
-		parts := strings.SplitN(r, ":", 2)
-		cidr := parts[0]
-		if len(parts) == 2 {
-			if p, err := strconv.Atoi(parts[1]); err == nil {
-				rule.port = p
-			}
-		}
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			ip := net.ParseIP(cidr)
-			if ip != nil {
-				if ip.To4() != nil {
-					_, network, _ = net.ParseCIDR(cidr + "/32")
-				} else {
-					_, network, _ = net.ParseCIDR(cidr + "/128")
-				}
-			}
-			if network == nil {
-				slog.Warn("skipping invalid allow rule", "rule", r)
-				continue
-			}
-		}
-		rule.network = network
-		parsed = append(parsed, rule)
-	}
-	return parsed
-}
-
-func matchesAllowList(addr string, rules []allowRule) bool {
-	host, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	port, _ := strconv.Atoi(portStr)
-
-	for _, rule := range rules {
-		if rule.network.Contains(ip) {
-			if rule.port == 0 || rule.port == port {
-				return true
-			}
-		}
-	}
-	return false
-}
-
