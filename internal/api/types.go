@@ -1,6 +1,6 @@
 package api
 
-import "github.com/CGA1123/krun-api/internal/machine"
+import "github.com/CGA1123/krun-api/machine"
 
 // CreateMachineRequest is the JSON body for POST /v1/machines.
 type CreateMachineRequest struct {

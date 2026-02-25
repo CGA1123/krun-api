@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/CGA1123/krun-api/internal/krun"
-	"github.com/CGA1123/krun-api/internal/network"
+	"github.com/CGA1123/krun-api/krun"
+	"github.com/CGA1123/krun-api/network"
 )
 
 // Manager orchestrates the lifecycle of machines (VMs + virtual networks).

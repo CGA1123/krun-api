@@ -6,7 +6,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/CGA1123/krun-api/internal/krun"
+	"github.com/CGA1123/krun-api/krun"
 )
 
 // VMConfig is the JSON configuration read from stdin.

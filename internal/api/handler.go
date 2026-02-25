@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/CGA1123/krun-api/internal/machine"
+	"github.com/CGA1123/krun-api/machine"
 )
 
 // Handler holds the dependencies for HTTP handlers.

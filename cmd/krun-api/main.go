@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/CGA1123/krun-api/internal/api"
-	"github.com/CGA1123/krun-api/internal/krun"
-	"github.com/CGA1123/krun-api/internal/machine"
+	"github.com/CGA1123/krun-api/krun"
+	"github.com/CGA1123/krun-api/machine"
 )
 
 func main() {
