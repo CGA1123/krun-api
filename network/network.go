@@ -14,15 +14,9 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
-	"github.com/inetaf/tcpproxy"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const linkLocalSubnet = "169.254.0.0/16"
+
 
 // VMNetwork manages the userspace virtual network for a single VM.
 type VMNetwork struct {
@@ -46,7 +40,8 @@ func NewVMNetwork(vmID string, opts Opts) (*VMNetwork, error) {
 		Protocol:          types.VfkitProtocol,
 	}
 
-	vn, err := virtualnetwork.New(cfg)
+	dialer := buildDialer(opts)
+	vn, err := virtualnetwork.New(cfg, dialer)
 	if err != nil {
 		return nil, fmt.Errorf("create virtual network: %w", err)
 	}
@@ -117,76 +112,41 @@ func (n *VMNetwork) Close() error {
 	return nil
 }
 
-// customTCPForwarder creates a TCP forwarder that routes connections through
-// a custom dialer for proxy support and allow-list enforcement.
-func customTCPForwarder(s *stack.Stack, opts Opts) *tcp.Forwarder {
-	dialer := buildDialer(opts)
-
-	return tcp.NewForwarder(s, 0, 2048, func(r *tcp.ForwarderRequest) {
-		localAddress := r.ID().LocalAddress
-		localPort := r.ID().LocalPort
-
-		if linkLocal().Contains(localAddress) {
-			r.Complete(true)
-			return
-		}
-
-		dest := net.JoinHostPort(localAddress.String(), fmt.Sprint(localPort))
-
-		outbound, err := dialer(dest)
-		if err != nil {
-			slog.Debug("custom dialer blocked", "dest", dest, "error", err)
-			r.Complete(true)
-			return
-		}
-
-		var wq waiter.Queue
-		ep, tcpErr := r.CreateEndpoint(&wq)
-		r.Complete(false)
-		if tcpErr != nil {
-			outbound.Close()
-			slog.Error("CreateEndpoint failed", "error", tcpErr)
-			return
-		}
-
-		remote := tcpproxy.DialProxy{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return outbound, nil
-			},
-		}
-		remote.HandleConn(gonet.NewTCPConn(&wq, ep))
-	})
-}
-
-func buildDialer(opts Opts) func(addr string) (net.Conn, error) {
+func buildDialer(opts Opts) func(network, addr string) (net.Conn, error) {
 	if opts.ProxyAddr != "" && len(opts.AllowList) > 0 {
 		rules := parseAllowList(opts.AllowList)
-		return func(addr string) (net.Conn, error) {
+		return func(network, addr string) (net.Conn, error) {
 			if !matchesAllowList(addr, rules) {
+				slog.Info("guest connection blocked", "network", network, "addr", addr)
 				return nil, fmt.Errorf("blocked by allow list: %s", addr)
 			}
-			return net.Dial("tcp", opts.ProxyAddr)
+			slog.Info("guest connection", "network", network, "addr", addr)
+			return net.Dial(network, opts.ProxyAddr)
 		}
 	}
 
 	if opts.ProxyAddr != "" {
-		return func(addr string) (net.Conn, error) {
-			return net.Dial("tcp", opts.ProxyAddr)
+		return func(network, addr string) (net.Conn, error) {
+			slog.Info("guest connection", "network", network, "addr", addr)
+			return net.Dial(network, opts.ProxyAddr)
 		}
 	}
 
 	if len(opts.AllowList) > 0 {
 		rules := parseAllowList(opts.AllowList)
-		return func(addr string) (net.Conn, error) {
+		return func(network, addr string) (net.Conn, error) {
 			if !matchesAllowList(addr, rules) {
+				slog.Info("guest connection blocked", "network", network, "addr", addr)
 				return nil, fmt.Errorf("blocked by allow list: %s", addr)
 			}
-			return net.Dial("tcp", addr)
+			slog.Info("guest connection", "network", network, "addr", addr)
+			return net.Dial(network, addr)
 		}
 	}
 
-	return func(addr string) (net.Conn, error) {
-		return net.Dial("tcp", addr)
+	return func(network, addr string) (net.Conn, error) {
+		slog.Info("guest connection", "network", network, "addr", addr)
+		return net.Dial(network, addr)
 	}
 }
 
@@ -248,8 +208,3 @@ func matchesAllowList(addr string, rules []allowRule) bool {
 	return false
 }
 
-func linkLocal() *tcpip.Subnet {
-	_, parsedSubnet, _ := net.ParseCIDR(linkLocalSubnet)
-	subnet, _ := tcpip.NewSubnet(tcpip.AddrFromSlice(parsedSubnet.IP), tcpip.MaskFromBytes(parsedSubnet.Mask))
-	return &subnet
-}
