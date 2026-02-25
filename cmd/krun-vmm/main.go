@@ -11,16 +11,16 @@ import (
 
 // VMConfig is the JSON configuration read from stdin.
 type VMConfig struct {
-	LibkrunPath        string  `json:"libkrun_path"`
-	LogLevel           uint32  `json:"log_level"`
-	VCPUs              uint8   `json:"vcpus"`
-	MemoryMiB          uint32  `json:"memory_mib"`
-	RootfsPath         string  `json:"rootfs_path"`
-	ExecPath           string  `json:"exec_path"`
-	Args               []string `json:"args"`
-	Env                []string `json:"env"`
-	Workdir            string  `json:"workdir"`
-	ConsolePath        string  `json:"console_path"`
+	LibkrunPath        string                `json:"libkrun_path"`
+	LogLevel           uint32                `json:"log_level"`
+	VCPUs              uint8                 `json:"vcpus"`
+	MemoryMiB          uint32                `json:"memory_mib"`
+	RootfsPath         string                `json:"rootfs_path"`
+	ExecPath           string                `json:"exec_path"`
+	Args               []string              `json:"args"`
+	Env                []string              `json:"env"`
+	Workdir            string                `json:"workdir"`
+	ConsolePath        string                `json:"console_path"`
 	NetSocketPath      string                `json:"net_socket_path"`
 	MAC                []uint8               `json:"mac"`
 	Volumes            []krun.VirtioFSVolume `json:"volumes,omitempty"`
