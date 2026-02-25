@@ -27,7 +27,7 @@ if ! curl -sf "$API_URL/v1/machines" | python3 -c "import sys,json; json.load(sy
   echo "ERROR: krun-api server is not responding at $API_URL"
   echo ""
   echo "Start it in another terminal first:"
-  echo "  cd $(pwd) && make build && ./krun-api --libkrun-path /opt/homebrew/lib/libkrun.dylib --vmm-path ./krun-vmm --listen :9090"
+  echo "  cd $(pwd) && make build && ./krun-api --vmm-path ./krun-vmm --listen :9090"
   echo ""
   echo "Or set API_URL to point to your running instance:"
   echo "  API_URL=http://localhost:XXXX ./test-krun-exec.sh"
@@ -59,11 +59,15 @@ echo "==> Machine ID: $MACHINE_ID"
 echo "==> Waiting 2s for VM to boot..."
 sleep 2
 
-# Exec into the VM
+# Exec into the VM — pass any trailing script arguments as the command
 echo "==> Exec into VM as root..."
-echo "    (type 'exit' to disconnect)"
+if [ $# -gt 0 ]; then
+  echo "    (running: $*)"
+else
+  echo "    (type 'exit' to disconnect)"
+fi
 echo ""
-./krun-exec --api "$API_URL" "root@$MACHINE_ID"
+./krun-exec --api "$API_URL" "root@$MACHINE_ID" "$@"
 
 echo ""
 echo "==> Session ended."

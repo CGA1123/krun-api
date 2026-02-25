@@ -15,12 +15,13 @@ import (
 // resizeMagic is the 4-byte prefix for in-band resize messages.
 var resizeMagic = [4]byte{0x01, 0x80, 0x01, 0x80}
 
-// parseHandshake parses "<user> <cols> <rows>" from the handshake line.
-// Falls back to 80x24 if dimensions are missing (backwards compat).
-func parseHandshake(line string) (user string, cols, rows uint16) {
+// parseHandshake parses "<user> <cols> <rows> [cmd [args...]]" from the
+// handshake line. Falls back to 80x24 if dimensions are missing (backwards
+// compat). Any fields after the first three are returned as the command slice.
+func parseHandshake(line string) (user string, cols, rows uint16, cmd []string) {
 	fields := strings.Fields(strings.TrimSpace(line))
 	if len(fields) == 0 {
-		return "root", 80, 24
+		return "root", 80, 24, nil
 	}
 	user = fields[0]
 	cols, rows = 80, 24
@@ -31,8 +32,9 @@ func parseHandshake(line string) (user string, cols, rows uint16) {
 		if r, err := strconv.ParseUint(fields[2], 10, 16); err == nil {
 			rows = uint16(r)
 		}
+		cmd = fields[3:]
 	}
-	return user, cols, rows
+	return user, cols, rows, cmd
 }
 
 // copyWithResize copies from src to the PTY, watching for the 4-byte resize

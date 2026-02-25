@@ -20,12 +20,12 @@ import (
 func main() {
 	apiURL := flag.String("api", "http://localhost:9191", "krun-api server URL")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: krun-exec [flags] <user>@<machine-id>\n\nFlags:\n")
+		fmt.Fprintf(os.Stderr, "Usage: krun-exec [flags] <user>@<machine-id> [cmd [args...]]\n\nFlags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	if flag.NArg() != 1 {
+	if flag.NArg() < 1 {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -36,7 +36,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*apiURL, user, machineID); err != nil {
+	cmd := flag.Args()[1:]
+
+	if err := run(*apiURL, user, machineID, cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -56,7 +58,7 @@ type machineResponse struct {
 	ExecSocketPath string `json:"exec_socket_path"`
 }
 
-func run(apiURL, user, machineID string) error {
+func run(apiURL, user, machineID string, cmd []string) error {
 	// 1. Get the machine to discover the exec socket path.
 	resp, err := http.Get(apiURL + "/v1/machines/" + machineID)
 	if err != nil {
@@ -96,7 +98,11 @@ func run(apiURL, user, machineID string) error {
 		return fmt.Errorf("get terminal size: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(conn, "%s %d %d\n", user, cols, rows); err != nil {
+	handshake := fmt.Sprintf("%s %d %d", user, cols, rows)
+	if len(cmd) > 0 {
+		handshake += " " + strings.Join(cmd, " ")
+	}
+	if _, err := fmt.Fprintf(conn, "%s\n", handshake); err != nil {
 		return fmt.Errorf("send handshake: %w", err)
 	}
 

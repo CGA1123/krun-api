@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -281,24 +282,29 @@ func serveExec(listener net.Listener) {
 func handleExecSession(conn net.Conn) {
 	defer conn.Close()
 
-	// Read the handshake line: "<user> <cols> <rows>\n"
+	// Read the handshake line: "<user> <cols> <rows> [cmd [args...]]\n"
 	reader := bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		log.Printf("vminit: exec read handshake: %v", err)
 		return
 	}
-	user, cols, rows := parseHandshake(line)
+	user, cols, rows, execCmd := parseHandshake(line)
 	if user == "" {
 		user = "root"
 	}
 
-	log.Printf("vminit: exec session starting: user=%s size=%dx%d", user, cols, rows)
+	log.Printf("vminit: exec session starting: user=%s size=%dx%d cmd=%v", user, cols, rows, execCmd)
 
-	// Spawn a login shell with a PTY at the requested size.
+	// Spawn the requested command (or a login shell if none given) with a PTY.
 	// Use -s to specify the shell explicitly, avoiding su calling login(1)
 	// which conflicts with the PTY setup from pty.Start.
-	cmd := exec.Command("su", "-s", "/bin/sh", "-", user)
+	var cmd *exec.Cmd
+	if len(execCmd) > 0 {
+		cmd = exec.Command("su", append([]string{"-s", "/bin/sh", "-", user, "-c", strings.Join(execCmd, " ")})...)
+	} else {
+		cmd = exec.Command("su", "-s", "/bin/sh", "-", user)
+	}
 	winSize := &pty.Winsize{Cols: cols, Rows: rows}
 	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {

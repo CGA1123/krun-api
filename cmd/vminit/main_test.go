@@ -19,20 +19,23 @@ func TestParseHandshake(t *testing.T) {
 		line               string
 		wantUser           string
 		wantCols, wantRows uint16
+		wantCmd            []string
 	}{
-		{"full handshake", "alice 120 40\n", "alice", 120, 40},
-		{"user only (backwards compat)", "bob\n", "bob", 80, 24},
-		{"empty line", "\n", "root", 80, 24},
-		{"extra whitespace", "  carol  200  50  \n", "carol", 200, 50},
-		{"just user with spaces", "  dave  \n", "dave", 80, 24},
-		{"invalid cols", "eve abc 30\n", "eve", 80, 30},
-		{"invalid rows", "frank 100 xyz\n", "frank", 100, 24},
-		{"zero dimensions", "gina 0 0\n", "gina", 0, 0},
+		{"full handshake", "alice 120 40\n", "alice", 120, 40, nil},
+		{"with command", "alice 120 40 vim\n", "alice", 120, 40, []string{"vim"}},
+		{"with command and args", "alice 120 40 vim /etc/hosts\n", "alice", 120, 40, []string{"vim", "/etc/hosts"}},
+		{"user only (backwards compat)", "bob\n", "bob", 80, 24, nil},
+		{"empty line", "\n", "root", 80, 24, nil},
+		{"extra whitespace", "  carol  200  50  \n", "carol", 200, 50, nil},
+		{"just user with spaces", "  dave  \n", "dave", 80, 24, nil},
+		{"invalid cols", "eve abc 30\n", "eve", 80, 30, nil},
+		{"invalid rows", "frank 100 xyz\n", "frank", 100, 24, nil},
+		{"zero dimensions", "gina 0 0\n", "gina", 0, 0, nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user, cols, rows := parseHandshake(tt.line)
+			user, cols, rows, cmd := parseHandshake(tt.line)
 			if user != tt.wantUser {
 				t.Errorf("user = %q, want %q", user, tt.wantUser)
 			}
@@ -41,6 +44,15 @@ func TestParseHandshake(t *testing.T) {
 			}
 			if rows != tt.wantRows {
 				t.Errorf("rows = %d, want %d", rows, tt.wantRows)
+			}
+			if len(cmd) != len(tt.wantCmd) {
+				t.Errorf("cmd = %v, want %v", cmd, tt.wantCmd)
+			} else {
+				for i := range cmd {
+					if cmd[i] != tt.wantCmd[i] {
+						t.Errorf("cmd[%d] = %q, want %q", i, cmd[i], tt.wantCmd[i])
+					}
+				}
 			}
 		})
 	}
