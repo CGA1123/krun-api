@@ -11,7 +11,6 @@ import (
 
 // VMConfig is the JSON configuration read from stdin.
 type VMConfig struct {
-	LibkrunPath        string                `json:"libkrun_path"`
 	LogLevel           uint32                `json:"log_level"`
 	VCPUs              uint8                 `json:"vcpus"`
 	MemoryMiB          uint32                `json:"memory_mib"`
@@ -37,9 +36,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	lib, err := krun.Open(cfg.LibkrunPath)
+	lib, err := krun.Open("libkrun.dylib")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "krun-vmm: failed to load libkrun from %s: %v\n", cfg.LibkrunPath, err)
+		fmt.Fprintf(os.Stderr, "krun-vmm: failed to load libkrun: %v\n", err)
 		os.Exit(1)
 	}
 

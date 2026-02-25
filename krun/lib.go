@@ -231,10 +231,10 @@ type libkrun struct {
 	GetMaxVCPUs     func() int32                           `C:"krun_get_max_vcpus"`
 
 	// TEE (libkrun-sev only)
-	SetTEEConfigFile func(ctxID uint32, filepath string) int32 `C:"krun_set_tee_config_file"`
+	SetTEEConfigFile func(ctxID uint32, filepath string) int32 `C:"krun_set_tee_config_file" optional:"true"`
 
 	// Shutdown / startup
-	GetShutdownEventFD func(ctxID uint32) int32 `C:"krun_get_shutdown_eventfd"`
+	GetShutdownEventFD func(ctxID uint32) int32 `C:"krun_get_shutdown_eventfd" optional:"true"`
 	StartEnter         func(ctxID uint32) int32 `C:"krun_start_enter"`
 }
 
@@ -273,9 +273,15 @@ func Open(path string) (_ *Lib, retErr error) {
 	var k libkrun
 	ik := reflect.Indirect(reflect.ValueOf(&k))
 	for i := 0; i < ik.NumField(); i++ {
-		cName := ik.Type().Field(i).Tag.Get("C")
+		field := ik.Type().Field(i)
+		cName := field.Tag.Get("C")
 		if cName == "" {
 			continue
+		}
+		if field.Tag.Get("optional") == "true" {
+			if _, err := purego.Dlsym(f, cName); err != nil {
+				continue
+			}
 		}
 		fn := ik.Field(i).Addr().Interface()
 		purego.RegisterLibFunc(fn, f, cName)

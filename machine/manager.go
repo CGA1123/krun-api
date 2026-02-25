@@ -16,18 +16,17 @@ import (
 
 // Manager orchestrates the lifecycle of machines (VMs + virtual networks).
 type Manager struct {
-	mu          sync.RWMutex
-	machines    map[string]*Machine
-	vms         map[string]*krun.VM
-	networks    map[string]*network.VMNetwork
-	libkrunPath    string
-	vmmBinPath     string
-	socketDir      string
-	krunLogLevel   uint32
+	mu           sync.RWMutex
+	machines     map[string]*Machine
+	vms          map[string]*krun.VM
+	networks     map[string]*network.VMNetwork
+	vmmBinPath   string
+	socketDir    string
+	krunLogLevel uint32
 }
 
 // NewManager creates a new machine manager.
-func NewManager(libkrunPath, vmmBinPath, socketDir string, krunLogLevel uint32) (*Manager, error) {
+func NewManager(vmmBinPath, socketDir string, krunLogLevel uint32) (*Manager, error) {
 	if err := os.MkdirAll(socketDir, 0700); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
@@ -36,7 +35,6 @@ func NewManager(libkrunPath, vmmBinPath, socketDir string, krunLogLevel uint32) 
 		machines:     make(map[string]*Machine),
 		vms:          make(map[string]*krun.VM),
 		networks:     make(map[string]*network.VMNetwork),
-		libkrunPath:  libkrunPath,
 		vmmBinPath:   vmmBinPath,
 		socketDir:    socketDir,
 		krunLogLevel: krunLogLevel,
@@ -144,7 +142,6 @@ func (mgr *Manager) Start(id string) error {
 
 	// Configure the krun VM (spawned as a child process).
 	vm := krun.NewVM(krun.VMConfig{
-		LibkrunPath:        mgr.libkrunPath,
 		LogLevel:           mgr.krunLogLevel,
 		VmmBinPath:         mgr.vmmBinPath,
 		VCPUs:              uint8(m.Config.VCPUs),

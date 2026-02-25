@@ -17,9 +17,8 @@ import (
 
 // VMConfig holds the configuration for a new VM.
 type VMConfig struct {
-	LibkrunPath string
-	LogLevel    uint32
-	VmmBinPath  string
+	LogLevel   uint32
+	VmmBinPath string
 
 	VCPUs      uint8
 	MemoryMiB  uint32
@@ -52,7 +51,6 @@ type VirtioFSVolume struct {
 
 // vmmConfig is the JSON sent to the krun-vmm child process via stdin.
 type vmmConfig struct {
-	LibkrunPath        string   `json:"libkrun_path"`
 	LogLevel           uint32   `json:"log_level"`
 	VCPUs              uint8    `json:"vcpus"`
 	MemoryMiB          uint32   `json:"memory_mib"`
@@ -95,7 +93,6 @@ func (vm *VM) ExecSocketPath() string {
 // Start spawns the krun-vmm child process and monitors it.
 func (vm *VM) Start() error {
 	childCfg := vmmConfig{
-		LibkrunPath:        vm.cfg.LibkrunPath,
 		LogLevel:           vm.cfg.LogLevel,
 		VCPUs:              vm.cfg.VCPUs,
 		MemoryMiB:          vm.cfg.MemoryMiB,

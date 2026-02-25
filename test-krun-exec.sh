@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-API_URL="${API_URL:-http://localhost:9090}"
+API_URL="${API_URL:-http://localhost:9191}"
 
 # Build everything
 echo "==> Building..."
