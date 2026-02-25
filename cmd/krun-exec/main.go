@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -82,27 +85,37 @@ func run(apiURL, user, machineID string) error {
 	}
 	defer conn.Close()
 
-	// 3. Send the username as the first line.
-	if _, err := fmt.Fprintf(conn, "%s\n", user); err != nil {
-		return fmt.Errorf("send user: %w", err)
-	}
-
-	// 4. Put local terminal into raw mode.
+	// 3. Get terminal size and send handshake: "<user> <cols> <rows>\n"
 	stdinFd := int(os.Stdin.Fd())
 	if !term.IsTerminal(stdinFd) {
 		return fmt.Errorf("stdin is not a terminal")
 	}
 
+	cols, rows, err := term.GetSize(stdinFd)
+	if err != nil {
+		return fmt.Errorf("get terminal size: %w", err)
+	}
+
+	if _, err := fmt.Fprintf(conn, "%s %d %d\n", user, cols, rows); err != nil {
+		return fmt.Errorf("send handshake: %w", err)
+	}
+
+	// 4. Put local terminal into raw mode.
 	oldState, err := term.MakeRaw(stdinFd)
 	if err != nil {
 		return fmt.Errorf("make raw: %w", err)
 	}
 	defer term.Restore(stdinFd, oldState)
 
-	// 5. Bidirectional copy: local stdin/stdout <-> vsock connection.
+	// 5. Set up SIGWINCH handler for terminal resize forwarding.
+	winchCh := make(chan os.Signal, 1)
+	signal.Notify(winchCh, syscall.SIGWINCH)
+	defer signal.Stop(winchCh)
+
+	// 6. Bidirectional copy: local stdin/stdout <-> vsock connection.
 	done := make(chan struct{}, 2)
 	go func() {
-		_, _ = io.Copy(conn, os.Stdin)
+		copyStdinWithResize(conn, os.Stdin, stdinFd, winchCh)
 		if tc, ok := conn.(*net.UnixConn); ok {
 			tc.CloseWrite()
 		}
@@ -115,4 +128,50 @@ func run(apiURL, user, machineID string) error {
 	<-done
 
 	return nil
+}
+
+// resizeMagic is the 4-byte prefix for in-band resize messages.
+var resizeMagic = [4]byte{0x01, 0x80, 0x01, 0x80}
+
+// copyStdinWithResize copies stdin to dst while also injecting 8-byte resize
+// messages when SIGWINCH is received.
+func copyStdinWithResize(dst io.Writer, stdin *os.File, fd int, winchCh <-chan os.Signal) {
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-winchCh:
+			if err := sendResize(dst, fd); err != nil {
+				return
+			}
+		default:
+		}
+
+		// Use a short read deadline so we can check for resize signals.
+		stdin.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		n, err := stdin.Read(buf)
+		if n > 0 {
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return
+			}
+		}
+		if err != nil {
+			if os.IsTimeout(err) {
+				continue
+			}
+			return
+		}
+	}
+}
+
+func sendResize(dst io.Writer, fd int) error {
+	cols, rows, err := term.GetSize(fd)
+	if err != nil {
+		return err
+	}
+	var msg [8]byte
+	copy(msg[:4], resizeMagic[:])
+	binary.BigEndian.PutUint16(msg[4:6], uint16(cols))
+	binary.BigEndian.PutUint16(msg[6:8], uint16(rows))
+	_, err = dst.Write(msg[:])
+	return err
 }

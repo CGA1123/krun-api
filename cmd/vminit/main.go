@@ -1,4 +1,4 @@
-//go:build unix
+//go:build linux
 
 package main
 
@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -157,6 +156,15 @@ func run(name string, args ...string) {
 	}
 }
 
+// --- poweroff ---
+
+func poweroff() {
+	log.Println("vminit: syncing filesystems")
+	unix.Sync()
+	log.Println("vminit: calling reboot(POWER_OFF)")
+	unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
+}
+
 // --- vsock helpers ---
 
 // vsockListener wraps a raw AF_VSOCK file descriptor as a net.Listener.
@@ -191,6 +199,7 @@ func newVsockConn(fd int, port uint32) *vsockConn {
 func (c *vsockConn) Read(b []byte) (int, error)               { return c.file.Read(b) }
 func (c *vsockConn) Write(b []byte) (int, error)              { return c.file.Write(b) }
 func (c *vsockConn) Close() error                             { return c.file.Close() }
+func (c *vsockConn) CloseWrite() error                        { return unix.Shutdown(int(c.file.Fd()), unix.SHUT_WR) }
 func (c *vsockConn) LocalAddr() net.Addr                      { return vsockAddr(c.port) }
 func (c *vsockConn) RemoteAddr() net.Addr                     { return vsockAddr(c.port) }
 func (c *vsockConn) SetDeadline(t time.Time) error            { return c.file.SetDeadline(t) }
@@ -272,25 +281,26 @@ func serveExec(listener net.Listener) {
 func handleExecSession(conn net.Conn) {
 	defer conn.Close()
 
-	// Read the username from the first line.
+	// Read the handshake line: "<user> <cols> <rows>\n"
 	reader := bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		log.Printf("vminit: exec read user: %v", err)
+		log.Printf("vminit: exec read handshake: %v", err)
 		return
 	}
-	user := strings.TrimSpace(line)
+	user, cols, rows := parseHandshake(line)
 	if user == "" {
 		user = "root"
 	}
 
-	log.Printf("vminit: exec session starting: user=%s", user)
+	log.Printf("vminit: exec session starting: user=%s size=%dx%d", user, cols, rows)
 
-	// Spawn a login shell with a PTY.
+	// Spawn a login shell with a PTY at the requested size.
 	// Use -s to specify the shell explicitly, avoiding su calling login(1)
 	// which conflicts with the PTY setup from pty.Start.
 	cmd := exec.Command("su", "-s", "/bin/sh", "-", user)
-	ptmx, err := pty.Start(cmd)
+	winSize := &pty.Winsize{Cols: cols, Rows: rows}
+	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {
 		log.Printf("vminit: exec start shell: %v", err)
 		return
@@ -310,11 +320,17 @@ func handleExecSession(conn net.Conn) {
 	// Bidirectional copy between connection and PTY.
 	done := make(chan struct{}, 2)
 	go func() {
-		_, _ = io.Copy(ptmx, conn)
+		copyWithResize(ptmx, conn)
 		done <- struct{}{}
 	}()
 	go func() {
 		_, _ = io.Copy(conn, ptmx)
+		// Half-close the write side so the proxy propagates EOF to the
+		// host. Without this, the host blocks on read until it writes
+		// something that triggers the proxy to notice the guest is gone.
+		if vc, ok := conn.(*vsockConn); ok {
+			vc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
 	<-done
@@ -344,11 +360,3 @@ func reapZombies() {
 	}
 }
 
-// --- poweroff ---
-
-func poweroff() {
-	log.Println("vminit: syncing filesystems")
-	unix.Sync()
-	log.Println("vminit: calling reboot(POWER_OFF)")
-	unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
-}
